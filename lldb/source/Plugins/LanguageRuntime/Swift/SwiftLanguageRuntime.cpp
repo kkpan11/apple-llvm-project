@@ -317,9 +317,9 @@ SwiftLanguageRuntime::FindAsyncTaskSize(Process &process) {
       runtime->m_async_task_size);
 }
 
-std::optional<uint32_t>
-SwiftLanguageRuntime::FindConcurrencyDebugVersion(Process &process) {
-  ModuleSP concurrency_module = FindConcurrencyModule(process);
+static std::optional<uint32_t> ReadConcurrencyDebugVersion(Process &process) {
+  ModuleSP concurrency_module =
+      SwiftLanguageRuntime::FindConcurrencyModule(process);
   if (!concurrency_module)
     return {};
   std::optional<uint32_t> version_word =
@@ -327,6 +327,22 @@ SwiftLanguageRuntime::FindConcurrencyDebugVersion(Process &process) {
   if (!version_word)
     return {};
   return *version_word & g_concurrency_version_mask;
+}
+
+std::optional<uint32_t>
+SwiftLanguageRuntime::FindConcurrencyDebugVersion(Process &process) {
+  SwiftLanguageRuntime *runtime = Get(&process);
+  if (!runtime)
+    return ReadConcurrencyDebugVersion(process);
+  std::lock_guard<std::mutex> guard(runtime->m_concurrency_debug_values_mutex);
+  if (runtime->m_concurrency_debug_version)
+    return runtime->m_concurrency_debug_version;
+  std::optional<uint32_t> version = ReadConcurrencyDebugVersion(process);
+  // Failures and version 0 (no version symbol) are not cached: either may come
+  // from a lookup made before the concurrency runtime was loaded.
+  if (version && *version != 0)
+    runtime->m_concurrency_debug_version = version;
+  return version;
 }
 
 static std::optional<lldb::addr_t>

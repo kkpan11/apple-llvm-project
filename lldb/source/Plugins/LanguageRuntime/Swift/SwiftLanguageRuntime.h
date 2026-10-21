@@ -1064,6 +1064,7 @@ private:
   std::mutex m_concurrency_debug_values_mutex;
   std::optional<lldb::offset_t> m_async_task_size;
   std::optional<lldb::offset_t> m_async_task_name_offset;
+  std::optional<uint32_t> m_concurrency_debug_version;
   /// \}
 
   static std::pair<std::string, std::optional<DemangledNameInfo>>
