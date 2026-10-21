@@ -2978,8 +2978,8 @@ static void PrintTaskTree(const TaskInfo &task_info, Stream &stream,
 }
 } // namespace
 
-/// Construct a `ThreadTask` instance for a live (yet to be completed) Task
-/// variable contained in the first argument.
+/// Returns the thread running the live (yet to be completed) Task in the first
+/// argument, or a `ThreadTask` for it if it is not running.
 static llvm::Expected<ThreadSP>
 ThreadForLiveTaskArgument(Args &command, ExecutionContext &exe_ctx) {
   if (!exe_ctx.GetFramePtr())
@@ -3028,6 +3028,11 @@ ThreadForLiveTaskArgument(Args &command, ExecutionContext &exe_ctx) {
         return task_info.takeError();
       if (task_info->isComplete)
         return llvm::createStringError("task has completed");
+
+      // The resume fields of a running task are stale.
+      if (ThreadSP thread =
+              FindThreadRunningTask(exe_ctx.GetProcessRef(), *task_info))
+        return thread;
 
       return std::make_shared<ThreadTask>(task_info->id,
                                           task_info->resumeAsyncContext,
@@ -3102,8 +3107,10 @@ private:
     }
 
     auto &thread_list = m_exe_ctx.GetProcessRef().GetThreadList();
-    thread_list.AddThread(thread_task.get());
-    thread_list.SetSelectedThreadByID(thread_task.get()->GetID());
+    lldb::tid_t tid = thread_task.get()->GetID();
+    if (!thread_list.FindThreadByID(tid, /*can_update=*/false))
+      thread_list.AddThread(thread_task.get());
+    thread_list.SetSelectedThreadByID(tid);
 
     result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
   }
