@@ -545,7 +545,7 @@ ABIArgInfo X86_32ABIInfo::classifyReturnType(QualType RetTy,
       // floating-point register. (MSVC does not apply this special case.)
       // We apply a similar transformation for pointer types to improve the
       // quality of the generated IR.
-      if (const Type *SeltTy = isSingleElementStruct(RetTy, getContext()))
+      if (const Type *SeltTy = isSingleElementRecord(RetTy, getContext()))
         if ((!IsWin32StructABI && SeltTy->isRealFloatingType())
             || SeltTy->hasPointerRepresentation())
           return ABIArgInfo::getDirect(CGT.ConvertType(QualType(SeltTy, 0)));
@@ -632,7 +632,7 @@ ABIArgInfo X86_32ABIInfo::getIndirectResult(QualType Ty, bool ByVal,
       Realign);
 }
 
-/// Like isSingleElementStruct, but only looks through one level of records.
+/// Like isSingleElementRecord, but only looks through one level of records.
 /// This mirrors how GCC gives a record the mode of its only field.
 static const Type *getSingleFieldType(QualType T, ASTContext &Context) {
   const auto *RD = T->getAsRecordDecl();
@@ -693,7 +693,7 @@ static const Type *getSingleFieldType(QualType T, ASTContext &Context) {
 X86_32ABIInfo::Class X86_32ABIInfo::classify(QualType Ty) const {
   if (getContext().getLangOpts().isCompatibleWith(
           LangOptions::ClangABI::Ver23)) {
-    const Type *T = isSingleElementStruct(Ty, getContext());
+    const Type *T = isSingleElementRecord(Ty, getContext());
     if (!T)
       T = Ty.getTypePtr();
 
@@ -2500,7 +2500,7 @@ ABIArgInfo X86_64ABIInfo::getIndirectResult(QualType Ty,
 llvm::Type *X86_64ABIInfo::GetByteVectorType(QualType Ty) const {
   // Wrapper structs/arrays that only contain vectors are passed just like
   // vectors; strip them off if present.
-  if (const Type *InnerTy = isSingleElementStruct(Ty, getContext()))
+  if (const Type *InnerTy = isSingleElementRecord(Ty, getContext()))
     Ty = QualType(InnerTy, 0);
 
   llvm::Type *IRType = CGT.ConvertType(Ty);
