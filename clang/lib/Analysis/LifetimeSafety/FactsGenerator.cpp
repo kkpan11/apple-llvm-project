@@ -1248,8 +1248,10 @@ llvm::SmallVector<Fact *> FactsGenerator::issuePlaceholderLoans() {
     const Loan *L = FactMgr.getLoanMgr().createPlaceholderLoan(MD);
     PlaceholderLoanFacts.push_back(
         FactMgr.createFact<IssueFact>(L->getID(), List->getOuterOriginID()));
-    if (LSOpts.CheckFieldOriginEscape && !isa<CXXConstructorDecl>(MD))
+    if ((LSOpts.IssueFieldPlaceholderLoans || LSOpts.CheckFieldOriginEscape) &&
+        !isa<CXXConstructorDecl>(MD)) {
       issueFieldPlaceholderLoans(MD, PlaceholderLoanFacts);
+    }
   }
   for (const ParmVarDecl *PVD : FD->parameters()) {
     OriginList *List = getOriginsList(*PVD);

@@ -46,7 +46,12 @@ struct LifetimeSafetyOpts {
   bool CheckLifetimeboundViolations = false;
   bool CheckMisplacedLifetimebound = false;
   bool CheckInapplicableLifetimebound = false;
+  /// Report methods that return a value derived from a field's origin rather
+  /// than from '*this'. Implies IssueFieldPlaceholderLoans.
   bool CheckFieldOriginEscape = false;
+  /// Issue placeholder loans for the fields of the enclosing class, without
+  /// reporting anything about them.
+  bool IssueFieldPlaceholderLoans = false;
 };
 
 /// Enum to track functions visible across or within TU.
