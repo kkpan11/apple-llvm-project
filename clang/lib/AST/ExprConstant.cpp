@@ -1946,7 +1946,8 @@ static uint64_t evaluateIncompleteArraySize(const ASTContext &C, QualType T) {
 
   APSInt Result;
   Expr::EvalStatus Status;
-  EvalInfo Info(C, Status, EvaluationMode::ConstantExpression);
+  EvalInfo Info(C, /*SProxy=*/nullptr, Status,
+               EvaluationMode::ConstantExpression);
   if (!EvaluateInteger(DCPT->getCountExpr(), Result, Info))
     return 0;
 
@@ -24438,7 +24439,7 @@ static bool EvaluateTerminatorElement(const Expr *E, APValue &Result,
 bool Expr::tryEvaluateTerminatorElement(EvalResult &Result,
                                         const ASTContext &Ctx) const {
   Expr::EvalStatus Status;
-  EvalInfo Info(Ctx, Status, EvaluationMode::ConstantFold);
+  EvalInfo Info(Ctx, /*SProxy=*/nullptr, Status, EvaluationMode::ConstantFold);
   return EvaluateTerminatorElement(this, Result.Val, Info);
 }
 
