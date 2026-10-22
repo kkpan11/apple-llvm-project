@@ -1,6 +1,10 @@
 // Put every task on one serial executor, so each parent must suspend before
-// its child can run.
-@MainActor
+// its child can run. Embedded Swift has no MainActor.
+@globalActor actor Serial {
+  static let shared = Serial()
+}
+
+@Serial
 func fact(n: Int) async -> Int {
   if (n == 1) {
     return 1 // break here

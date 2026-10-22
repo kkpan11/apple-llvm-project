@@ -278,21 +278,48 @@ ReadConcurrencyABIConfiguration(Process &process, StringRef name) {
   return value;
 }
 
+/// Like ReadConcurrencyABIConfiguration, caching the value in `cache`. Failures
+/// are not cached: the concurrency runtime may not be loaded yet.
+static llvm::Expected<uint64_t>
+ReadCachedConcurrencyABIConfiguration(Process &process, StringRef name,
+                                      std::mutex &mutex,
+                                      std::optional<uint64_t> &cache) {
+  std::lock_guard<std::mutex> guard(mutex);
+  if (cache)
+    return *cache;
+  llvm::Expected<uint64_t> value =
+      ReadConcurrencyABIConfiguration(process, name);
+  if (value)
+    cache = *value;
+  return value;
+}
+
 llvm::Expected<lldb::offset_t>
 SwiftLanguageRuntime::FindAsyncTaskNameOffset(Process &process) {
-  return ReadConcurrencyABIConfiguration(
-      process, "_swift_concurrency_debug_asyncTaskNameOffset");
+  constexpr llvm::StringLiteral name =
+      "_swift_concurrency_debug_asyncTaskNameOffset";
+  SwiftLanguageRuntime *runtime = Get(&process);
+  if (!runtime)
+    return ReadConcurrencyABIConfiguration(process, name);
+  return ReadCachedConcurrencyABIConfiguration(
+      process, name, runtime->m_concurrency_debug_values_mutex,
+      runtime->m_async_task_name_offset);
 }
 
 llvm::Expected<lldb::offset_t>
 SwiftLanguageRuntime::FindAsyncTaskSize(Process &process) {
-  return ReadConcurrencyABIConfiguration(
-      process, "_swift_concurrency_debug_asyncTaskSize");
+  constexpr llvm::StringLiteral name = "_swift_concurrency_debug_asyncTaskSize";
+  SwiftLanguageRuntime *runtime = Get(&process);
+  if (!runtime)
+    return ReadConcurrencyABIConfiguration(process, name);
+  return ReadCachedConcurrencyABIConfiguration(
+      process, name, runtime->m_concurrency_debug_values_mutex,
+      runtime->m_async_task_size);
 }
 
-std::optional<uint32_t>
-SwiftLanguageRuntime::FindConcurrencyDebugVersion(Process &process) {
-  ModuleSP concurrency_module = FindConcurrencyModule(process);
+static std::optional<uint32_t> ReadConcurrencyDebugVersion(Process &process) {
+  ModuleSP concurrency_module =
+      SwiftLanguageRuntime::FindConcurrencyModule(process);
   if (!concurrency_module)
     return {};
   std::optional<uint32_t> version_word =
@@ -300,6 +327,22 @@ SwiftLanguageRuntime::FindConcurrencyDebugVersion(Process &process) {
   if (!version_word)
     return {};
   return *version_word & g_concurrency_version_mask;
+}
+
+std::optional<uint32_t>
+SwiftLanguageRuntime::FindConcurrencyDebugVersion(Process &process) {
+  SwiftLanguageRuntime *runtime = Get(&process);
+  if (!runtime)
+    return ReadConcurrencyDebugVersion(process);
+  std::lock_guard<std::mutex> guard(runtime->m_concurrency_debug_values_mutex);
+  if (runtime->m_concurrency_debug_version)
+    return runtime->m_concurrency_debug_version;
+  std::optional<uint32_t> version = ReadConcurrencyDebugVersion(process);
+  // Failures and version 0 (no version symbol) are not cached: either may come
+  // from a lookup made before the concurrency runtime was loaded.
+  if (version && *version != 0)
+    runtime->m_concurrency_debug_version = version;
+  return version;
 }
 
 static std::optional<lldb::addr_t>
@@ -2612,20 +2655,26 @@ protected:
 namespace {
 using TaskInfo = ReflectionContextInterface::AsyncTaskInfo;
 
+/// Returns the Thread that is currently running a task, if any.
+static ThreadSP FindThreadRunningTask(Process &process,
+                                      const TaskInfo &task_info) {
+  if (!task_info.isRunning)
+    return {};
+
+  // See OperatingSystemSwiftTasks for how these are created.
+  constexpr uint64_t TASK_MASK = 0x0000000f00000000ULL;
+  uint64_t tid = task_info.id | TASK_MASK;
+  return process.GetThreadList().FindThreadByID(tid, /*can_update=*/false);
+}
+
 /// Finds the Thread that is currently running a task, otherwise creates a
 /// ThreadTask for it.
 static ThreadSP FindThreadForTask(ExecutionContext &exe_ctx,
                                   const TaskInfo &task_info) {
   // For running tasks, TaskInfo won't have frame information, but LLDB should.
-  if (task_info.isRunning) {
-    // See OperatingSystemSwiftTasks for how these are created.
-    constexpr uint64_t TASK_MASK = 0x0000000f00000000ULL;
-    uint64_t tid = task_info.id | TASK_MASK;
-
-    auto &thread_list = exe_ctx.GetProcessRef().GetThreadList();
-    if (ThreadSP thread = thread_list.FindThreadByID(tid, /*can_update=*/false))
-      return thread;
-  }
+  if (ThreadSP thread =
+          FindThreadRunningTask(exe_ctx.GetProcessRef(), task_info))
+    return thread;
 
   // There should always be frame information for Tasks that are not running. If
   // not, fallback to runJob.
@@ -2972,8 +3021,8 @@ static void PrintTaskTree(const TaskInfo &task_info, Stream &stream,
 }
 } // namespace
 
-/// Construct a `ThreadTask` instance for a live (yet to be completed) Task
-/// variable contained in the first argument.
+/// Returns the thread running the live (yet to be completed) Task in the first
+/// argument, or a `ThreadTask` for it if it is not running.
 static llvm::Expected<ThreadSP>
 ThreadForLiveTaskArgument(Args &command, ExecutionContext &exe_ctx) {
   if (!exe_ctx.GetFramePtr())
@@ -3022,6 +3071,11 @@ ThreadForLiveTaskArgument(Args &command, ExecutionContext &exe_ctx) {
         return task_info.takeError();
       if (task_info->isComplete)
         return llvm::createStringError("task has completed");
+
+      // The resume fields of a running task are stale.
+      if (ThreadSP thread =
+              FindThreadRunningTask(exe_ctx.GetProcessRef(), *task_info))
+        return thread;
 
       return std::make_shared<ThreadTask>(task_info->id,
                                           task_info->resumeAsyncContext,
@@ -3096,8 +3150,10 @@ private:
     }
 
     auto &thread_list = m_exe_ctx.GetProcessRef().GetThreadList();
-    thread_list.AddThread(thread_task.get());
-    thread_list.SetSelectedThreadByID(thread_task.get()->GetID());
+    lldb::tid_t tid = thread_task.get()->GetID();
+    if (!thread_list.FindThreadByID(tid, /*can_update=*/false))
+      thread_list.AddThread(thread_task.get());
+    thread_list.SetSelectedThreadByID(tid);
 
     result.SetStatus(lldb::eReturnStatusSuccessFinishResult);
   }
