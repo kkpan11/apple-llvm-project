@@ -658,46 +658,6 @@ static Value *getSubOfOperand(Value *X, Value *Y) {
   return XI->getOperand(0);
 }
 
-/// Returns true if the signed system implies \p Op s<= SMAX - \p K if \p Upper
-/// is set and \p Op s>= SMIN + \p K otherwise, using that each integer
-/// variable no wider than \p Op is in [SMIN, SMAX]. SMAX does not fit a row,
-/// so it is a fresh variable M: query Op - M <= -K with rows V - M <= 0, or
-/// -Op - M <= 1 - K with rows -V - M <= 1, for the variables V of the
-/// query's sub-system.
-static bool doesHoldUsingTypeBounds(ConstraintInfo &Info, Value *Op, int64_t K,
-                                    bool Upper) {
-  Type *Ty = Op->getType();
-  Value *Zero = ConstantInt::get(Ty, 0);
-  SmallVector<Value *> NewVariables;
-  ConstraintTy R = Info.getConstraint(CmpInst::ICMP_SLE, Upper ? Op : Zero,
-                                      Upper ? Zero : Op, NewVariables,
-                                      /*ShouldDecompose=*/true);
-  if (R.empty() || !R.IsSigned || !NewVariables.empty() ||
-      AddOverflow(R.Coefficients[0].Coefficient, Upper ? -K : 1 - K,
-                  R.Coefficients[0].Coefficient))
-    return false;
-
-  SmallVector<unsigned> SubToOld;
-  auto [SubCS, NewR] =
-      Info.getCS(/*Signed=*/true).getSubSystem(R.Coefficients, &SubToOld);
-  unsigned M = SubToOld.size();
-  unsigned BitWidth = Ty->getScalarSizeInBits();
-  bool Added = false;
-  for (const auto &[V, Idx] : Info.getValue2Index(/*Signed=*/true)) {
-    auto *It = lower_bound(SubToOld, Idx);
-    if (It == SubToOld.end() || *It != Idx || !V->getType()->isIntegerTy() ||
-        V->getType()->getIntegerBitWidth() > BitWidth)
-      continue;
-    RowTy Row = {Entry(Upper ? 0 : 1, 0),
-                 Entry(Upper ? 1 : -1, It - SubToOld.begin()), Entry(-1, M)};
-    Added |= SubCS.addRow(Row, M);
-  }
-  if (!Added)
-    return false;
-  NewR.push_back(Entry(-1, M));
-  return SubCS.isConditionImplied(NewR);
-}
-
 /// Returns true if \p Info implies that \p Op is in \p R, interpreting \p R as
 /// a signed range if \p Signed is set and as an unsigned range otherwise.
 static bool doesHoldInRange(ConstraintInfo &Info, Value *Op,
@@ -720,20 +680,13 @@ static bool doesHoldInRange(ConstraintInfo &Info, Value *Op,
     Max = APInt(BitWidth, MaxConstraintValue - 1);
 
   Type *Ty = Op->getType();
-  // For signed bounds, fall back to the type bounds of the variables.
-  auto HoldsUsingTypeBounds = [&](const APInt &K, bool Upper) {
-    return Signed && K.ult(MaxConstraintValue) &&
-           doesHoldUsingTypeBounds(Info, Op, K.getZExtValue(), Upper);
-  };
   if (Min != MinVal &&
       !Info.doesHold(Signed ? CmpInst::ICMP_SGE : CmpInst::ICMP_UGE, Op,
-                     ConstantInt::get(Ty, Min)) &&
-      !HoldsUsingTypeBounds(Min - MinVal, /*Upper=*/false))
+                     ConstantInt::get(Ty, Min)))
     return false;
   if (Max != MaxVal &&
       !Info.doesHold(Signed ? CmpInst::ICMP_SLE : CmpInst::ICMP_ULE, Op,
-                     ConstantInt::get(Ty, Max)) &&
-      !HoldsUsingTypeBounds(MaxVal - Max, /*Upper=*/true))
+                     ConstantInt::get(Ty, Max)))
     return false;
   return true;
 }

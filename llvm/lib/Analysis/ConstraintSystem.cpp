@@ -218,8 +218,7 @@ bool ConstraintSystem::mayHaveSolution() {
 }
 
 std::pair<ConstraintSystem, ConstraintSystem::RowTy>
-ConstraintSystem::getSubSystem(ArrayRef<Entry> R,
-                               SmallVectorImpl<unsigned> *SubToOld) const {
+ConstraintSystem::getSubSystem(ArrayRef<Entry> R) const {
   assert((R.empty() || R.back().Id <= NumVariables) &&
          "query must only use variables of the system");
   // Only constraints that share a variable (transitively) with a query R can
@@ -257,10 +256,6 @@ ConstraintSystem::getSubSystem(ArrayRef<Entry> R,
   unsigned NextIdx = 1;
   for (unsigned Id : InSystem.set_bits())
     OldToNew[Id] = NextIdx++;
-  if (SubToOld) {
-    SubToOld->assign(1, 0);
-    append_range(*SubToOld, InSystem.set_bits());
-  }
 
   // Build new compact set of rows.
   SubSystem.NumVariables = NextIdx - 1;

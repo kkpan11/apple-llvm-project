@@ -151,11 +151,9 @@ public:
 
   /// Build and return a sub-system of constraints connected (transitively) to
   /// query \p R, with variables compacted to a dense index range. Also
-  /// translate \p R's entries to the sub-system. If \p SubToOld is set, it
-  /// receives the original index of each sub-system index.
+  /// translate \p R's entries to the sub-system.
   LLVM_ABI std::pair<ConstraintSystem, RowTy>
-  getSubSystem(ArrayRef<Entry> R,
-               SmallVectorImpl<unsigned> *SubToOld = nullptr) const;
+  getSubSystem(ArrayRef<Entry> R) const;
 
   /// Returns true if a single row of the system implies \p R.
   LLVM_ABI bool isImpliedBySingleRow(ArrayRef<Entry> R) const;
