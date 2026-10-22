@@ -14028,8 +14028,9 @@ bool AArch64TargetLowering::isFPImmLegalAsFMov(const APFloat &Imm,
   return false;
 }
 
-bool AArch64TargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT,
-                                         bool OptForSize) const {
+TargetLowering::FPImmAction
+AArch64TargetLowering::getFPImmAction(const APFloat &Imm, EVT VT,
+                                      bool OptForSize) const {
   bool IsLegal = isFPImmLegalAsFMov(Imm, VT);
 
   // If we can not materialize in immediate field for fmov, check if the
@@ -14073,7 +14074,7 @@ bool AArch64TargetLowering::isFPImmLegal(const APFloat &Imm, EVT VT,
   LLVM_DEBUG(dbgs() << (IsLegal ? "Legal " : "Illegal ") << VT
                     << " imm value: ";
              Imm.dump(););
-  return IsLegal;
+  return IsLegal ? FPImmAction::Legal : FPImmAction::ConstantPool;
 }
 
 //===----------------------------------------------------------------------===//
