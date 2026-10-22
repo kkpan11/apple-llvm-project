@@ -8,6 +8,9 @@ from lldbsuite.test.decorators import *
 
 class TestSwiftForwardInteropTemplateTypes(TestBase):
 
+    # With explicitly built modules, ClangImporter cannot find a class template
+    # specialization that no typedef names. Only Linux uses implicit modules here.
+    @skipIf(oslist=no_match(["linux"]), swift_module_importer=no_match("noclang"))
     @swiftClangImporterTest
     @skipEmbeddedSwiftOnWindows
     def test(self):

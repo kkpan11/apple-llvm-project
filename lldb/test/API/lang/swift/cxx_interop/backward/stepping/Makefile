@@ -1,4 +1,7 @@
+# Explicit module builds fail to find the libstdc++ module map.
+ifeq "$(OS)" "Linux"
 SWIFT_ENABLE_EXPLICIT_MODULES := NO
+endif
 SWIFT_CXX_HEADER := swift-types.h
 SWIFT_SOURCES := swift-types.swift
 CXX_SOURCES := main.cpp
