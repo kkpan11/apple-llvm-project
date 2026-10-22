@@ -533,6 +533,7 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
   Options.MCOptions.PPCUseFullRegisterNames =
       CodeGenOpts.PPCUseFullRegisterNames;
   Options.MisExpect = CodeGenOpts.MisExpect;
+  Options.VerifyArgABICompliance = true;
 
   return true;
 }
