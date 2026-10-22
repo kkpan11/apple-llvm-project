@@ -552,10 +552,10 @@ define i1 @test_ult_add_no_nsw_pos_6_assume_pos(i8 %start, i8 %high) {
 ; CHECK-NEXT:  entry:
 ; CHECK-NEXT:    [[START_POS:%.*]] = icmp sge i8 [[START:%.*]], 0
 ; CHECK-NEXT:    call void @llvm.assume(i1 [[START_POS]])
-; CHECK-NEXT:    [[ADD:%.*]] = add i8 [[START]], 3
+; CHECK-NEXT:    [[ADD:%.*]] = add nuw i8 [[START]], 3
 ; CHECK-NEXT:    [[C_1:%.*]] = icmp ult i8 [[ADD]], [[HIGH:%.*]]
 ; CHECK-NEXT:    call void @llvm.assume(i1 [[C_1]])
-; CHECK-NEXT:    [[ADD_2:%.*]] = add i8 [[START]], 2
+; CHECK-NEXT:    [[ADD_2:%.*]] = add nuw i8 [[START]], 2
 ; CHECK-NEXT:    ret i1 true
 ;
 entry:

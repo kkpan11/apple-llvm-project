@@ -193,7 +193,7 @@ define i64 @halving_search_step_plus_one(ptr %a, i64 %n, i32 %t) {
 ; CHECK-NEXT:    [[GEP:%.*]] = getelementptr inbounds i32, ptr [[A]], i64 [[SUM]]
 ; CHECK-NEXT:    [[V:%.*]] = load i32, ptr [[GEP]], align 4
 ; CHECK-NEXT:    [[LT:%.*]] = icmp slt i32 [[V]], [[T]]
-; CHECK-NEXT:    [[SUM1:%.*]] = add i64 [[SUM]], 1
+; CHECK-NEXT:    [[SUM1:%.*]] = add nuw i64 [[SUM]], 1
 ; CHECK-NEXT:    [[S_NEXT]] = select i1 [[LT]], i64 [[SUM1]], i64 [[S]]
 ; CHECK-NEXT:    [[H:%.*]] = lshr i64 [[R]], 1
 ; CHECK-NEXT:    [[R_NEXT]] = and i64 [[H]], -2
