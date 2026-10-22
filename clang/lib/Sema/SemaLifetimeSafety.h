@@ -25,6 +25,20 @@
 
 namespace clang::lifetimes {
 
+/// Returns true if the user explicitly enabled \p DiagID, e.g. via
+/// -W<group> or a pragma, as opposed to it being implied by -Weverything.
+/// See rdar://190622221.
+inline bool IsDiagExplicitlyEnabled(const DiagnosticsEngine &Diags,
+                                    unsigned DiagID) {
+  for (const auto &[ID, Mapping] : Diags.getDiagnosticMappings()) {
+    if (ID == DiagID) {
+      return Mapping.isUser() &&
+             Mapping.getSeverity() != diag::Severity::Ignored;
+    }
+  }
+  return false;
+}
+
 inline bool ShouldCheckSafety(Sema &S, const Decl *D) {
   DiagnosticsEngine &Diags = S.getDiagnostics();
   constexpr unsigned DiagIDs[] = {
@@ -81,9 +95,13 @@ inline bool ShouldSuggestLifetimeAnnotations(Sema &S, const Decl *D) {
       diag::warn_lifetime_safety_cross_tu_ctor_param_suggestion,
       diag::warn_lifetime_safety_intra_tu_this_suggestion,
       diag::warn_lifetime_safety_cross_tu_this_suggestion};
-  for (unsigned DiagID : DiagIDs)
-    if (!Diags.isIgnored(DiagID, D->getBeginLoc()))
+  // Don't enable these via -Weverything - see rdar://190709787.
+  for (unsigned DiagID : DiagIDs) {
+    if (Diags.isIgnored(DiagID, D->getBeginLoc()))
+      continue;
+    if (!Diags.getEnableAllWarnings() || IsDiagExplicitlyEnabled(Diags, DiagID))
       return true;
+  }
   return false;
 }
 
