@@ -258,6 +258,20 @@ struct ReturnsSelf {
   }
 };
 
+template <class C> struct SelfCapturingIter {
+  C *c; // expected-note {{escapes to this field}}
+  explicit SelfCapturingIter(C &x) : c(&x) {} // expected-warning {{parameter in intra-TU constructor should be marked [[clang::lifetimebound]]}}
+};
+
+template <class T> struct AutoReturnSelf {
+  auto make() { return SelfCapturingIter<AutoReturnSelf>(*this); } // expected-warning {{implicit this in intra-TU function should be marked [[clang::lifetimebound]]}} expected-note {{param returned here}}
+};
+
+auto test_auto_return_implicit_this() {
+  AutoReturnSelf<char> b;
+  return b.make(); // expected-warning {{stack memory associated with local variable 'b' is returned}} expected-note {{returned here}}
+}
+
 struct ReturnThisAnnotated {
   const ReturnThisAnnotated& get() [[clang::lifetimebound]] { return *this; }
 };
@@ -550,7 +564,7 @@ struct CaptureViewToView {
 CaptureViewToView test_view_to_view() {
   MyObj obj;
   View v(obj); // expected-warning {{stack memory associated with local variable 'obj' is returned}}
-  CaptureViewToView x(v);
+  CaptureViewToView x(v); // expected-note {{local variable 'v' aliases the storage of local variable 'obj'}}
   return x; // expected-note {{returned here}}
 }
 
