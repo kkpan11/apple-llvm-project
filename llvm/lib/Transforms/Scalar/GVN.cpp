@@ -245,6 +245,7 @@ private:
   LoopInfo *LI = nullptr;
   AAResults *AA = nullptr;
   MemorySSAUpdater *MSSAU = nullptr;
+  EarliestEscapeAnalysis *EA = nullptr;
 
   GVNValueTable VN;
 
@@ -2876,8 +2877,7 @@ void GVNPassImpl::collectClobberList(SmallVectorImpl<MemoryAccess *> &Clobbers,
 bool GVNPassImpl::findReachingValuesForLoad(
     LoadInst *L, SmallVectorImpl<ReachingMemVal> &Values, MemorySSA &MSSA,
     AAResults &AAR) {
-  EarliestEscapeAnalysis EA(*DT, LI);
-  BatchAAResults AA(AAR, &EA);
+  BatchAAResults AA(AAR, EA);
   BasicBlock *StartBlock = L->getParent();
   bool IsInvariantLoad = L->hasMetadata(LLVMContext::MD_invariant_load);
   // TODO: Simplify later work by just getClobberingMemoryAccess().
@@ -3839,6 +3839,9 @@ bool GVNPassImpl::run(Function &F, AssumptionCache &RunAC, DominatorTree &RunDT,
   }
   DTU.flush();
 
+  EarliestEscapeAnalysis RunEA(*DT, &LI);
+  EA = MSSA ? &RunEA : nullptr;
+
   unsigned Iteration = 0;
   while (ShouldContinue) {
     LLVM_DEBUG(dbgs() << "GVN iteration: " << Iteration << "\n");
@@ -4198,6 +4201,8 @@ void GVNPassImpl::cleanupGlobalSets() {
 void GVNPassImpl::removeInstruction(Instruction *I) {
   VN.erase(I);
   if (MD) MD->removeInstruction(I);
+  if (EA)
+    EA->removeInstruction(I);
   if (MSSAU)
     MSSAU->removeMemoryAccess(I);
 #ifndef NDEBUG
