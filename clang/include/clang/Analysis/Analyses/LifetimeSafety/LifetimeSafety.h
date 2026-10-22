@@ -37,15 +37,21 @@ namespace clang::lifetimes {
 struct LifetimeSafetyOpts {
   /// Maximum number of CFG blocks to analyze. Functions with larger CFGs will
   /// be skipped.
-  size_t MaxCFGBlocks;
+  size_t MaxCFGBlocks = 0;
 
   /// Whether to suggest lifetime annotations.
-  bool SuggestAnnotations;
+  bool SuggestAnnotations = false;
 
-  bool CheckNoescapeViolations;
-  bool CheckLifetimeboundViolations;
-  bool CheckMisplacedLifetimebound;
-  bool CheckInapplicableLifetimebound;
+  bool CheckNoescapeViolations = false;
+  bool CheckLifetimeboundViolations = false;
+  bool CheckMisplacedLifetimebound = false;
+  bool CheckInapplicableLifetimebound = false;
+  /// Report methods that return a value derived from a field's origin rather
+  /// than from '*this'. Implies IssueFieldPlaceholderLoans.
+  bool CheckFieldOriginEscape = false;
+  /// Issue placeholder loans for the fields of the enclosing class, without
+  /// reporting anything about them.
+  bool IssueFieldPlaceholderLoans = false;
 };
 
 /// Enum to track functions visible across or within TU.
@@ -163,6 +169,11 @@ public:
   virtual void suggestLifetimeboundToImplicitThis(WarningScope Scope,
                                                   const CXXMethodDecl *MD,
                                                   const Expr *EscapeExpr) {}
+
+  // Reports when a member function returns an origin of a field.
+  virtual void reportFieldOriginEscape(const CXXMethodDecl *MD,
+                                       const FieldDecl *FD,
+                                       const Expr *EscapeExpr) {}
 
   // Adds inferred lifetime bound attribute for implicit this to its
   // TypeSourceInfo.
