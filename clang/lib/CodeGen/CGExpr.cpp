@@ -7601,6 +7601,7 @@ static CGCallee EmitDirectCallee(CodeGenFunction &CGF, GlobalDecl GD) {
         Clone = llvm::Function::Create(Fn->getFunctionType(),
                                        llvm::GlobalValue::InternalLinkage,
                                        Fn->getAddressSpace(), FDInlineName, M);
+        Clone->setCallingConv(Fn->getCallingConv());
         Clone->setAttributes(Fn->getAttributes());
         Clone->addFnAttr(llvm::Attribute::AlwaysInline);
       }
