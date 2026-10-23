@@ -167,7 +167,7 @@ add_lldb_library(liblldb ${liblldb_library_type} ${option_framework}
 
 # BEGIN Swift Mods
 # Note that add_properties_for_swift_modules appends RPATHs so it's critical
-# that this is called after lldb_setup_rpaths.
+# that this is called after lldb_add_rpaths.
 if(LLDB_BUILD_FRAMEWORK)
   add_properties_for_swift_modules(liblldb "../../../../../../usr/" "../../../../")
 else()
