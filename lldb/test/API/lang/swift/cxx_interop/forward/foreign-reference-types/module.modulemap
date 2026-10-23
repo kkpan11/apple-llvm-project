@@ -1,0 +1,4 @@
+module FRT {
+  header "frt.h"
+  requires cplusplus
+}
