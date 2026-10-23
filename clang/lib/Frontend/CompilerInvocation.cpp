@@ -5944,6 +5944,10 @@ CompilerInvocation::computeContextHash(DiagnosticsEngine &Diags) const {
   HBuilder.add(getFrontendOpts().CacheCompileJob,
                getFrontendOpts().ForIncludeTreeScan);
 
+  // Scanning PCMs store include trees with prefix mappings already applied.
+  // Include the mappings in the hash to avoid reusing stale mapped paths.
+  HBuilder.addRange(getFrontendOpts().PathPrefixMappings);
+
   llvm::MD5::MD5Result Result;
   HBuilder.getHasher().final(Result);
   uint64_t Hash = Result.high() ^ Result.low();
