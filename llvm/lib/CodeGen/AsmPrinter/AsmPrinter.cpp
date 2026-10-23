@@ -536,6 +536,7 @@ bool AsmPrinter::doInitialization(Module &M) {
   HasSplitStack = false;
   HasNoSplitStack = false;
   DbgInfoAvailable = !M.debug_compile_units().empty();
+  ModuleExceptionModel = M.getExceptionModel();
   const Triple &Target = M.getTargetTriple();
 
   AddrLabelSymbols = nullptr;
@@ -645,7 +646,7 @@ bool AsmPrinter::doInitialization(Module &M) {
   if (M.getNamedMetadata(PseudoProbeDescMetadataName))
     PP = std::make_unique<PseudoProbeHandler>(this);
 
-  switch (MAI.getExceptionHandlingType()) {
+  switch (ModuleExceptionModel) {
   case ExceptionHandling::None:
     // We may want to emit CFI for debug.
     [[fallthrough]];
@@ -660,7 +661,7 @@ bool AsmPrinter::doInitialization(Module &M) {
       if (ModuleCFISection == CFISection::EH)
         break;
     }
-    assert(MAI.getExceptionHandlingType() == ExceptionHandling::DwarfCFI ||
+    assert(ModuleExceptionModel == ExceptionHandling::DwarfCFI ||
            usesCFIWithoutEH() || ModuleCFISection != CFISection::EH);
     break;
   default:
@@ -668,7 +669,7 @@ bool AsmPrinter::doInitialization(Module &M) {
   }
 
   EHStreamer *ES = nullptr;
-  switch (MAI.getExceptionHandlingType()) {
+  switch (ModuleExceptionModel) {
   case ExceptionHandling::Default:
     llvm_unreachable("should have resolved exception model kind");
   case ExceptionHandling::None:
@@ -1419,8 +1420,10 @@ AsmPrinter::getFunctionCFISectionType(const Function &F) const {
   if (F.isDeclarationForLinker())
     return CFISection::None;
 
-  if (MAI.getExceptionHandlingType() == ExceptionHandling::DwarfCFI &&
-      F.needsUnwindTableEntry())
+  // A DwarfCFI module only carries EH unwind info if the target actually uses
+  // CFI for exceptions.
+  if (ModuleExceptionModel == ExceptionHandling::DwarfCFI &&
+      MAI.usesCFIForEH() && F.needsUnwindTableEntry())
     return CFISection::EH;
 
   if (MAI.usesCFIWithoutEH() && F.hasUWTable())
@@ -1442,10 +1445,9 @@ bool AsmPrinter::usesCFIWithoutEH() const {
 }
 
 void AsmPrinter::emitCFIInstruction(const MachineInstr &MI) {
-  ExceptionHandling ExceptionHandlingType = MAI.getExceptionHandlingType();
   if (!usesCFIWithoutEH() &&
-      ExceptionHandlingType != ExceptionHandling::DwarfCFI &&
-      ExceptionHandlingType != ExceptionHandling::ARM)
+      ModuleExceptionModel != ExceptionHandling::DwarfCFI &&
+      ModuleExceptionModel != ExceptionHandling::ARM)
     return;
 
   if (getFunctionCFISectionType(*MF) == CFISection::None)
@@ -4951,7 +4953,7 @@ void AsmPrinter::emitBasicBlockStart(const MachineBasicBlock &MBB) {
   }
 
   if (MBB.isEHContTarget() &&
-      MAI.getExceptionHandlingType() == ExceptionHandling::WinEH) {
+      ModuleExceptionModel == ExceptionHandling::WinEH) {
     OutStreamer->emitLabel(MBB.getEHContSymbol());
   }
 
