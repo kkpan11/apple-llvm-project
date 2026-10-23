@@ -4,7 +4,6 @@ from lldbsuite.test.decorators import *
 from lldbsuite.test.lldbtest import *
 
 
-@unittest.skip("skipping due to frequent timeouts: rdar://28183131")
 @requireThreadSupport
 @skipIfNoSBHeaders
 @skipIfRemote
