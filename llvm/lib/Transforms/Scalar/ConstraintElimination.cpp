@@ -2913,8 +2913,7 @@ static bool eliminateConstraints(Function &F, DominatorTree &DT, LoopInfo &LI,
                                  ScalarEvolution *SE,
                                  OptimizationRemarkEmitter &ORE,
                                  TargetLibraryInfo &TLI) {
-  const ScalarOptions &Opts =
-      F.getContext().getLibraryOptions().get<ScalarOptions>();
+  const ScalarOptions &Opts = getScalarOptions(F);
   bool Changed = false;
   DT.updateDFSNumbers();
 
