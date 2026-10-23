@@ -398,17 +398,6 @@ static bool initTargetOptions(CompilerInstance &CI, DiagnosticsEngine &Diags,
   Options.UseInitArray = CodeGenOpts.UseInitArray;
   Options.MCOptions.DisableIntegratedAS = CodeGenOpts.DisableIntegratedAS;
 
-  if (CodeGenOpts.hasSjLjExceptions())
-    Options.ExceptionModel = llvm::ExceptionHandling::SjLj;
-  if (CodeGenOpts.hasSEHExceptions())
-    Options.ExceptionModel = llvm::ExceptionHandling::WinEH;
-  if (CodeGenOpts.hasDWARFExceptions())
-    Options.ExceptionModel = llvm::ExceptionHandling::DwarfCFI;
-  if (CodeGenOpts.hasWasmExceptions())
-    Options.ExceptionModel = llvm::ExceptionHandling::Wasm;
-  if (CodeGenOpts.hasEmscriptenExceptions())
-    Options.ExceptionModel = llvm::ExceptionHandling::Emscripten;
-
   Options.NoZerosInBSS = CodeGenOpts.NoZeroInitializedInBSS;
 
   Options.BBAddrMap = CodeGenOpts.BBAddrMap;
