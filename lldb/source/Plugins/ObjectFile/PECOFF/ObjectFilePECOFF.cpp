@@ -269,7 +269,7 @@ ModuleSpecList ObjectFilePECOFF::GetModuleSpecifications(
   if (extractor_sp->GetByteSize() < length)
     if (DataBufferSP full_sp = MapFileData(file, -1, file_offset))
       extractor_sp->SetData(std::move(full_sp));
-  auto binary = llvm::object::createBinary(llvm::MemoryBufferRef(
+  auto binary = llvm::object::COFFObjectFile::create(llvm::MemoryBufferRef(
       toStringRef(extractor_sp->GetSharedDataBuffer()->GetData()),
       file.GetFilename()));
 
@@ -279,9 +279,7 @@ ModuleSpecList ObjectFilePECOFF::GetModuleSpecifications(
     return {};
   }
 
-  auto *COFFObj = llvm::dyn_cast<llvm::object::COFFObjectFile>(binary->get());
-  if (!COFFObj)
-    return {};
+  llvm::object::COFFObjectFile *COFFObj = binary->get();
 
   ModuleSpec module_spec(file);
   ArchSpec &spec = module_spec.GetArchitecture();
@@ -404,7 +402,7 @@ bool ObjectFilePECOFF::CreateBinary() {
 
   Log *log = GetLog(LLDBLog::Object);
 
-  auto binary = llvm::object::createBinary(llvm::MemoryBufferRef(
+  auto binary = llvm::object::COFFObjectFile::create(llvm::MemoryBufferRef(
       toStringRef(m_data_nsp->GetData()), m_file.GetFilename()));
   if (!binary) {
     LLDB_LOG_ERROR(log, binary.takeError(),
@@ -412,11 +410,7 @@ bool ObjectFilePECOFF::CreateBinary() {
     return false;
   }
 
-  // Make sure we only handle COFF format.
-  m_binary =
-      llvm::unique_dyn_cast<llvm::object::COFFObjectFile>(std::move(*binary));
-  if (!m_binary)
-    return false;
+  m_binary = std::move(*binary);
 
   LLDB_LOG(log, "this = {0}, module = {1} ({2}), file = {3}, binary = {4}",
            this, GetModule().get(), GetModule()->GetSpecificationDescription(),
