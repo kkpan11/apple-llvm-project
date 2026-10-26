@@ -48,6 +48,10 @@ function(add_lldb_unittest test_name)
 
   target_link_libraries(${test_name} PRIVATE ${ARG_LINK_LIBS})
 
+  if (ARG_SBAPITEST)
+    lldb_prevent_liblldb_symbol_interposition(${test_name})
+  endif()
+
   # BEGIN Swift Mods
   if(SWIFT_BUILD_SWIFT_SYNTAX)
     add_properties_for_swift_modules(${test_name} "../")
