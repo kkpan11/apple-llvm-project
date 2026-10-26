@@ -4290,7 +4290,7 @@ void FunctionDecl::setInstantiatedFromDecl(FunctionDecl *FD) {
 
 FunctionDecl *FunctionDecl::getInstantiatedFromDecl() const {
   return dyn_cast_if_present<FunctionDecl>(
-      TemplateOrSpecialization.dyn_cast<NamedDecl *>());
+      dyn_cast<NamedDecl *>(TemplateOrSpecialization));
 }
 
 bool FunctionDecl::isImplicitlyInstantiable() const {
