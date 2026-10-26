@@ -25,8 +25,7 @@ define i32 @i32_initially_postidx(ptr %p, i64 %n) {
 ; CHECK-NEXT:    mov w0, w8
 ; CHECK-NEXT:    ret
 ; CHECK-NEXT:  .LBB0_5:
-; CHECK-NEXT:    mov w8, wzr
-; CHECK-NEXT:    mov w0, w8
+; CHECK-NEXT:    mov w0, wzr
 ; CHECK-NEXT:    ret
 entry:
   %cmp1 = icmp sgt i64 %n, 0
