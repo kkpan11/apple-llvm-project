@@ -1059,6 +1059,14 @@ private:
   /// Swift native NSError isa.
   std::optional<lldb::addr_t> m_SwiftNativeNSErrorISA;
 
+  /// Cached values of the concurrency runtime's debug variables.
+  /// \{
+  std::mutex m_concurrency_debug_values_mutex;
+  std::optional<lldb::offset_t> m_async_task_size;
+  std::optional<lldb::offset_t> m_async_task_name_offset;
+  std::optional<uint32_t> m_concurrency_debug_version;
+  /// \}
+
   static std::pair<std::string, std::optional<DemangledNameInfo>>
   DemangleSymbolAsString(llvm::StringRef symbol, DemangleMode mode,
                          bool tracking, const SymbolContext *sc,
