@@ -3323,6 +3323,10 @@ private:
         result.AppendError("could not find the task address");
         return;
       }
+      if (*maybe_task_addr == 0) {
+        result.AppendError("no task is running on the current thread");
+        return;
+      }
 
       task_addr = *maybe_task_addr;
     }

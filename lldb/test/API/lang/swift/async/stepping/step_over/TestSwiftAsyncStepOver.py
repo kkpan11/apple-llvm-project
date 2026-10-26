@@ -35,9 +35,9 @@ class TestCase(lldbtest.TestBase):
 
         line_offset = 4 # Line where print(x) is.
         expected_line_nums = [0]  # print(x)
-        loop = [1, 2, 3, 4]
+        loop = [1, 2, 3]
         expected_line_nums += loop + loop + [1] # loop header
-        expected_line_nums += [5, 6]  # if line + if block
+        expected_line_nums += [4, 5]  # if line + if block
 
         for expected_line_num in expected_line_nums:
             thread.StepOver()
