@@ -20,6 +20,7 @@
 #include "clang/Basic/TargetBuiltins.h"
 #include "clang/Basic/TokenKinds.h"
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/Enum.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
@@ -834,11 +835,15 @@ IdentifierTable::getFutureCompatDiagKind(const IdentifierInfo &II,
                                          const LangOptions &LangOpts) {
   assert(II.isFutureCompatKeyword() && "diagnostic should not be needed");
 
-  uint64_t Flags = llvm::StringSwitch<uint64_t>(II.getName())
-#define KEYWORD(NAME, FLAGS) .Case(#NAME, FLAGS)
+  constexpr llvm::EnumStringDef<uint64_t> FlagsDefs[] = {
+#define KEYWORD(NAME, FLAGS) {{#NAME}, FLAGS},
 #include "clang/Basic/TokenKinds.def"
 #undef KEYWORD
-      ;
+  };
+  static constexpr auto FlagsData = BUILD_ENUM_STRINGS(FlagsDefs);
+  const auto *Entry = llvm::EnumStrings(FlagsData).fromString(II.getName());
+  assert(Entry && "future compat keyword should be in keyword list");
+  uint64_t Flags = Entry->value();
 
   if (LangOpts.CPlusPlus) {
     if ((Flags & KEYCXX11) == KEYCXX11)
