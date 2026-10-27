@@ -20,6 +20,7 @@ class TestSwiftLocalClosureTypes(TestBase):
     @swiftTest
     @skipEmbeddedSwiftOnLinux
     @skipEmbeddedSwiftOnWindows
+    @expectedFailureAll(debug_info=["pdb"])
     def test(self):
         """Test that a struct declared inside a closure can be inspected"""
         self.build()

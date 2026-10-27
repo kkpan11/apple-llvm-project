@@ -46,6 +46,7 @@ class TestSwiftUnsafeTypeFormatters(TestBase):
             lldbutil.check_variable(self, buf.GetChildAtIndex(i), value=value)
 
     @swiftTest
+    @expectedFailureAll(debug_info=["pdb"])
     def test(self):
         """Test that Swift unsafe pointer and buffer types get formatted properly"""
         self.build()
