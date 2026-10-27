@@ -1275,6 +1275,7 @@ void ClangdServer::adjustParseInputs(ParseInputs &Inputs, PathRef File) const {
     case SkipPreambleBuildPolicy::Always:
       return true;
     }
+    llvm_unreachable("fully covered switch");
   }();
 }
 
