@@ -1495,7 +1495,7 @@ void State::collectPHIInductionVars(Function &F) {
       InductionDescriptor IndDesc;
       if (!InductionDescriptor::isInductionPHI(&PHI, Loop, SE, IndDesc))
         continue;
-      if (!IndDesc.getConstIntStepValue())
+      if (!IndDesc.getConstStepValue())
         continue;
       if (PHI.getType()->isIntegerTy()) {
         IntPHIIndDescPairs.emplace_back(&PHI, IndDesc);
@@ -1517,8 +1517,8 @@ void State::collectPHIInductionVars(Function &F) {
         PHINode *IntPHI = IntPHIIndDescPair.first;
         InductionDescriptor IntPHIIndDesc = IntPHIIndDescPair.second;
         int64_t IntPHIStep =
-            IntPHIIndDesc.getConstIntStepValue()->getSExtValue();
-        int64_t PHIStep = PtrIndDesc.getConstIntStepValue()->getSExtValue();
+            IntPHIIndDesc.getConstStepValue()->getSExtValue();
+        int64_t PHIStep = PtrIndDesc.getConstStepValue()->getSExtValue();
         int64_t PHIStepSize =
             DL.getTypeAllocSize(InductionStep->getResultElementType());
         PHIStep /= PHIStepSize;
