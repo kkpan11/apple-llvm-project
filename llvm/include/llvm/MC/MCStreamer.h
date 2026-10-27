@@ -928,6 +928,7 @@ public:
 
   virtual void emitCFIBKeyFrame();
   virtual void emitCFIMTETaggedFrame();
+  virtual void emitCFINonHintPAuthFrame();
 
   /// This implements the DWARF2 '.loc fileno lineno ...' assembler
   /// directive.

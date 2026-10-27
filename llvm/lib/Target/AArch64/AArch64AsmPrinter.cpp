@@ -3701,7 +3701,8 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
     }
     return;
 
-  case AArch64::EMITBKEY: {
+  case AArch64::EMITBKEY:
+  case AArch64::EMITNONHINTED: {
     ExceptionHandling ExceptionHandlingType = getModuleExceptionModel();
     if (ExceptionHandlingType != ExceptionHandling::DwarfCFI &&
         ExceptionHandlingType != ExceptionHandling::ARM)
@@ -3710,7 +3711,11 @@ void AArch64AsmPrinter::emitInstruction(const MachineInstr *MI) {
     if (getFunctionCFISectionType(*MF) == CFISection::None)
       return;
 
-    OutStreamer->emitCFIBKeyFrame();
+    if (MI->getOpcode() == AArch64::EMITBKEY)
+      OutStreamer->emitCFIBKeyFrame();
+    else
+      OutStreamer->emitCFINonHintPAuthFrame();
+
     return;
   }
 

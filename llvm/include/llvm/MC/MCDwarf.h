@@ -924,6 +924,7 @@ struct MCDwarfFrameInfo {
   unsigned RAReg = static_cast<unsigned>(INT_MAX);
   bool IsBKeyFrame = false;
   bool IsMTETaggedFrame = false;
+  bool IsNonHintPAuthFrame = false;
 };
 
 // Emit DWARF call frame information and, when available, compact unwind
