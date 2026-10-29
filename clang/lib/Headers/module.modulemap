@@ -384,6 +384,12 @@ module availability_domain [system] {
   export *
 }
 
+module _Builtin_meta [system] {
+  requires reflection
+  header "meta"
+  export *
+}
+
 /* TO_UPSTREAM(BoundsSafety) ON */
 module ptrcheck [system] {
   header "ptrcheck.h"
