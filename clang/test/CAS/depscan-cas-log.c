@@ -1,4 +1,4 @@
-// Ensure both the first clang process and the daemon have logging enabled.
+// Ensure the daemon has logging enabled.
 // It's hard to check this exhaustively, but in practice if the daemon does not
 // enable logging there are currently zero records in the log.
 
@@ -16,5 +16,6 @@
 // Even a minimal compilation involves at least 9 records for the cache key.
 // CHECK-COUNT-9: [[PID1]] {{[0-9]*}}: create record
 
-// CHECK: [[PID2:[0-9]*]] {{[0-9]*}}: mmap '{{.*}}index.v{{[0-9]+}}'
-// CHECK: [[PID2]] {{[0-9]*}}: close mmap '{{.*}}index.v{{[0-9]+}}'
+// In daemon mode the client keeps the root ID it received as a string and never
+// opens the CAS, so no other process maps the index.
+// CHECK-NOT: {{[0-9]+}}: mmap '{{.*}}index.v{{[0-9]+}}'
