@@ -6,10 +6,10 @@ add_lldb_tool(lldb-mcp
     Option
     Support
   LINK_LIBS
-    liblldb
-    lldbUtility
     lldbHost
     lldbProtocolMCP
+    lldbUtility
+    liblldb
   )
 
 lldb_prevent_liblldb_symbol_interposition(lldb-mcp)
