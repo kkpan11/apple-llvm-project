@@ -1592,10 +1592,24 @@ write_file(
     ],
 )
 
+gentbl_cc_library(
+    name = "AnalysisOptionsTableGen",
+    strip_include_prefix = "lib/Analysis",
+    tbl_outs = {
+        "lib/Analysis/AnalysisOptions.inc": ["-gen-opt-parser-defs"],
+    },
+    tblgen = ":llvm-min-tblgen",
+    td_file = "lib/Analysis/AnalysisOptions.td",
+    deps = [":OptParserTdFiles"],
+)
+
 cc_library(
     name = "Analysis",
     srcs = glob(
-        ["lib/Analysis/*.cpp"],
+        [
+            "lib/Analysis/*.cpp",
+            "lib/Analysis/*.h",
+        ],
     ) + [
         "lib/Remarks/ExtraOptRemarks.cpp",
     ],
@@ -1622,11 +1636,13 @@ cc_library(
         "include/llvm/Analysis/InlinerModels.def",
     ],
     deps = [
+        ":AnalysisOptionsTableGen",
         ":BinaryFormat",
         ":Core",
         ":FrontendHLSL",
         ":MC",
         ":Object",
+        ":Option",
         ":ProfileData",
         ":Remarks",
         ":Support",
