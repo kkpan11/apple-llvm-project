@@ -16,6 +16,7 @@ add_lldb_unittest(UtilityTests
   FileSpecListTest.cpp
   FileSpecTest.cpp
   FlagsTest.cpp
+  IterableTest.cpp
   ListenerTest.cpp
   LockedTest.cpp
   LogTest.cpp
