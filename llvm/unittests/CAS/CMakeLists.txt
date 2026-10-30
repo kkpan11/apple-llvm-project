@@ -7,6 +7,7 @@ set(ONDISK_CAS_TEST_SOURCES
   BuiltinObjectHasherTest.cpp
   BuiltinUnifiedCASDatabasesTest.cpp
   CASConfigurationTest.cpp
+  FileLockTest.cpp
   OnDiskCASLoggerTest.cpp
   OnDiskGraphDBTest.cpp
   OnDiskDataAllocatorTest.cpp
