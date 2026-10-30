@@ -17,6 +17,12 @@
 #include "llvm/Support/BLAKE3.h"
 #include "llvm/Testing/Support/Error.h"
 
+namespace llvm::cas::ondisk {
+/// Declared in the private "OnDiskCommon.h".
+std::error_code lockFileThreadSafe(int FD, sys::fs::LockKind Kind);
+std::error_code unlockFileThreadSafe(int FD);
+} // namespace llvm::cas::ondisk
+
 namespace llvm::unittest::cas {
 
 using namespace llvm::cas;
