@@ -723,7 +723,6 @@ private:
       report_fatal_error(
           "OutputFilename is necessary to store the combined index.\n");
 
-    LLVMContext Ctx;
     std::vector<std::unique_ptr<MemoryBuffer>> InputBuffers;
     for (unsigned i = 0; i < InputFilenames.size(); ++i) {
       auto &Filename = InputFilenames[i];
@@ -941,7 +940,6 @@ private:
 
     std::vector<std::unique_ptr<MemoryBuffer>> InputBuffers;
     for (auto &Filename : InputFilenames) {
-      LLVMContext Ctx;
       auto InputOrErr = MemoryBuffer::getFile(Filename);
       error(InputOrErr, "error " + CurrentActivity);
       InputBuffers.push_back(std::move(*InputOrErr));
@@ -976,7 +974,6 @@ private:
     if (!ThinLTOIndex.empty())
       errs() << "Warning: -thinlto-index ignored for full ThinLTO process";
 
-    LLVMContext Ctx;
     std::vector<std::unique_ptr<MemoryBuffer>> InputBuffers;
     for (unsigned i = 0; i < InputFilenames.size(); ++i) {
       auto &Filename = InputFilenames[i];
