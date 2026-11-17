@@ -27065,6 +27065,17 @@ ExprResult Sema::BuildForgePtrExpr(SourceLocation KWLoc,
       return ExprError();
   }
 
+  // Warn about every use of the forge builtins (directly or via the
+  // __unsafe_forge_* macros)
+  if (!inTemplateInstantiation()) {
+    SourceLocation DiagLoc = SourceMgr.getExpansionLoc(KWLoc);
+    unsigned ForgeKind = IsForgeSingle ? 1 : IsForgeTerminated ? 2 : 0;
+    Diag(DiagLoc, SourceMgr.isInSystemHeader(DiagLoc)
+                      ? diag::warn_bounds_safety_unsafe_forge_sdk
+                      : diag::warn_bounds_safety_unsafe_forge)
+        << ForgeKind;
+  }
+
   ExprValueKind VK = Expr::getValueKindForType(ResultType);
   return new (Context)
       ForgePtrExpr(ResultType, VK, RvalueAddr.get(), RvalueSize.get(),

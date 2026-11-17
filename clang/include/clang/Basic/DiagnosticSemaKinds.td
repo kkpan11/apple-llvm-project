@@ -14240,6 +14240,14 @@ def err_bounds_safety_forge_negative : Error<
   "negative %select{address|size}0 argument to '__unsafe_forge_"
   "%select{bidi_indexable|single|terminated_by}1'">;
 
+def warn_bounds_safety_unsafe_forge : Warning<
+  "use of '__unsafe_forge_%select{bidi_indexable|single|terminated_by}0' is "
+  "unsafe">, InGroup<BoundsSafetyUnsafeForges>, DefaultIgnore;
+def warn_bounds_safety_unsafe_forge_sdk : Warning<
+  "use of '__unsafe_forge_%select{bidi_indexable|single|terminated_by}0' is "
+  "unsafe">, InGroup<BoundsSafetyUnsafeForgesSdk>, DefaultIgnore,
+  ShowInSystemHeader;
+
 def err_bounds_safety_abi_ptr_attr_invalid : Error<
   "%0 cannot be set as a default pointer attribute">;
 
